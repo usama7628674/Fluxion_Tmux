@@ -10,10 +10,13 @@ APServiceConfigDirectory=$FLUXIONWorkspacePath
 #readonly APServiceVersion="1.0"
 
 function ap_service_stop() {
-  if [ "$APServicePID" ]; then
-    kill $APServicePID &> $FLUXIONOutputDevice
-  fi
-
+  #if [ "$APServicePID" ]; then
+   # kill $APServicePID &> $FLUXIONOutputDevice
+  #fi
+	if tmux list-windows -F '#W' | grep -q "^AP\$"; then
+		#tmux kill-window -t fluxion:AP &> $FLUXIONOutputDevice
+		pkill -9 hostapd
+	fi
   APServicePID=""
 }
 
@@ -81,18 +84,21 @@ channel=$APServiceChannel" \
 function ap_service_start() {
   ap_service_stop
 
-  xterm $FLUXIONHoldXterm $TOP -bg "#000000" -fg "#FFFFFF" \
-    -title "FLUXION AP Service [hostapd]" -e \
-    hostapd "$APServiceConfigDirectory/$APServiceMAC-hostapd.conf" &
-  local parentPID=$!
+  #xterm $FLUXIONHoldXterm $TOP -bg "#000000" -fg "#FFFFFF" \
+   # -title "FLUXION AP Service [hostapd]" -e \
+    #hostapd "$APServiceConfigDirectory/$APServiceMAC-hostapd.conf" &
+  #local parentPID=$!
+
+	tmux new-window -n AP 'hostapd' $APServiceConfigDirectory/$APServiceMAC-hostapd.conf &
+    local parentPID=$!
 
   # Wait till hostapd has started and its virtual interface is ready.
-  while [ ! "$APServicePID" ]; do
-    sleep 1
-    APServicePID=$(pgrep -P $parentPID)
-  done
+  #while [ ! "$APServicePID" ]; do
+   # sleep 1
+    #APServicePID=$(pgrep -P $parentPID)
+  #done
 
-  ap_service_route
+  #ap_service_route
 }
 
 # FLUXSCRIPT END
