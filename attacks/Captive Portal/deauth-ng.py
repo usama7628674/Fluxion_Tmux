@@ -432,7 +432,7 @@ def parse_args():
     return vars(parser.parse_args())
 
 def get_ssid(p):
-    if p and u"\x00" not in "".join([x if ord(x) < 128 else "" for x in p]):
+    if p and u"\x00" not in "".join([str(x) if x < 128 else "" for x in p]):
 
         try:
             name = p.decode("utf-8")        # Remove assholes emojis in SSID's
