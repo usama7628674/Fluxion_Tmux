@@ -60,11 +60,26 @@ absolute_path=$(pwd)
 
 tmux has-session -t "${session_name}" 2>/dev/null
 if [ $? != 0 ]; then
+str=""
+if  test $# -gt 0; then
+	for var in "${@}"
+		do
+			str+=" "${var}
+	done
+
+tmux new-session -s "${session_name}" -d
+tmux rename-window -t "${session_name}" "${tmux_main_window}"
+tmux send-keys -t "${session_name}:${tmux_main_window}" "clear;cd ${absolute_path};bash ${0} ${str}" ENTER
+sleep 0.2
+tmux attach-session -t $session_name
+
+else
 tmux new-session -s "${session_name}" -d
 tmux rename-window -t "${session_name}" "${tmux_main_window}"
 tmux send-keys -t "${session_name}:${tmux_main_window}" "clear;cd ${absolute_path};bash ${0}" ENTER
 sleep 0.2
 tmux attach-session -t $session_name
+fi
 fi
 
 
